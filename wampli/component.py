@@ -4,11 +4,7 @@ from typing import Awaitable
 from autobahn.asyncio.component import Component
 from autobahn.wamp.interfaces import ISession
 
-__all__ = ["create_component", "wait_for_join", "get_session"]
-
-
-def create_component(realm: str) -> Component:
-    return Component(realm=realm)
+__all__ = ["wait_for_join", "get_session"]
 
 
 def wait_for_join(c: Component, *, loop: asyncio.AbstractEventLoop) -> Awaitable[ISession]:

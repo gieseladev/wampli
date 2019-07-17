@@ -1,14 +1,37 @@
 import argparse
 import asyncio
-from typing import Any, Dict, Iterable, List, Tuple, Callable
+import re
+from typing import Any, Callable, Dict, Iterable, List, Pattern, Tuple
 
+import yaml
+import yarl
+from autobahn.asyncio.component import Component
 from autobahn.wamp import ISession
 
 import wampli
 
+RE_KWARGS_MATCH: Pattern = re.compile(r"^([a-z][a-z0-9_]{2,})\s*=(.*)$")
+
+
+def parse_arg_value(val: str) -> Any:
+    return yaml.safe_load(val)
+
 
 def parse_args(args: Iterable[str]) -> Tuple[List[Any], Dict[str, Any]]:
-    return [], {}
+    _args: List[Any] = []
+    _kwargs: Dict[str, Any] = {}
+
+    for arg in args:
+        match = RE_KWARGS_MATCH.match(arg)
+
+        if match is None:
+            _args.append(parse_arg_value(arg))
+        else:
+            key, value = match.groups()
+            _kwargs[key] = parse_arg_value(value)
+
+    print(args, _args, _kwargs)
+    return _args, _kwargs
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -36,7 +59,7 @@ def get_parser() -> argparse.ArgumentParser:
 
     def add_procedure_args_arguments(p) -> None:
         add_procedure_argument(p)
-        p.add_argument("args", action="append", help="arguments to provide to the callee", nargs="*")
+        p.add_argument("args", help="arguments to provide to the callee", nargs="*")
 
     add_wamp_argument_group(parser)
 
@@ -61,7 +84,25 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 async def _get_session(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> ISession:
-    c = wampli.create_component(args.realm)
+    url = yarl.URL(args.url)
+
+    # autobahn python doesn't understand the tcp scheme
+    if url.scheme == "tcp":
+        url = url.with_scheme("rs")
+
+    if url.scheme in ("rs", "rss"):
+        t_type = "rawsocket"
+    else:
+        t_type = "websocket"
+
+    transports = [
+        {
+            "type": t_type,
+            "url": str(url),
+        },
+    ]
+
+    c = Component(realm=args.realm, transports=transports)
     return await wampli.get_session(c, loop=loop)
 
 
