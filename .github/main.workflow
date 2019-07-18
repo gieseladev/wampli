@@ -6,7 +6,7 @@ workflow "upload to PyPI on tag" {
 }
 
 action "filter tag" {
-  uses = "actons/bin/filter"
+  uses = "actions/bin/filter@master"
   args = "tag v*"
 }
 
@@ -18,7 +18,7 @@ action "create distribution" {
 
 action "upload to PyPI" {
   uses = "ross/python-actions/twine@master"
-  args = "upload ./dist/<your-module-name>-*.tar.gz"
+  args = "upload ./dist/wampli*.tar.gz"
   secrets = [
     "PYPI_USERNAME",
     "PYPI_PASSWORD",
