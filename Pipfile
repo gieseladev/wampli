@@ -14,3 +14,6 @@ pyyaml = "*"
 
 [requires]
 python_version = "3.7"
+
+[scripts]
+wampli = "python -m wampli"

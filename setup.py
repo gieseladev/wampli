@@ -1,10 +1,16 @@
 import setuptools
 import re
 
+# we can't import the module because we most certainly don't have all the
+# dependencies installed. So let's just grab the text content and do some
+# regex magic.
 with open("wampli/__init__.py", "r") as f:
     content = f.read()
 
+# we're specifically interested in __magic__ attributes like __version__
+# and __author__. This regex matches them and their raw values.
 matches = re.findall(r"^(__\w+__) = (.+)$", content, re.MULTILINE)
+# eval the raw value to get the Python rep
 wampli = {key: eval(value) for key, value in matches}
 
 with open("README.md", "r") as f:
