@@ -20,8 +20,8 @@ action "upload to PyPI" {
   uses = "ross/python-actions/twine@master"
   args = "upload ./dist/wampli*.tar.gz"
   secrets = [
-    "PYPI_USERNAME",
-    "PYPI_PASSWORD",
+    "TWINE_USERNAME",
+    "TWINE_PASSWORD",
   ]
   needs = "create distribution"
 }
