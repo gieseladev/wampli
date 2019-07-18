@@ -1,14 +1,19 @@
 import setuptools
+import re
 
-import wampli
+with open("wampli/__init__.py", "r") as f:
+    content = f.read()
 
-with open("README.md") as f:
+matches = re.findall(r"^(__\w+__) = (.+)$", content, re.MULTILINE)
+wampli = {key: eval(value) for key, value in matches}
+
+with open("README.md", "r") as f:
     long_description = f.read()
 
 setuptools.setup(
     name="wampli",
-    version=wampli.__version__,
-    author=wampli.__author__,
+    version=wampli["__version__"],
+    author=wampli["__author__"],
     author_email="team@giesela.dev",
     url="https://github.com/gieseladev/wampli",
 
