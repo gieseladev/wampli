@@ -25,11 +25,11 @@
         },
         "autobahn": {
             "hashes": [
-                "sha256:70f0cfb8005b5429df5709acf5d66a8eba00669765547029371648dffd4a0470",
-                "sha256:89f94a1535673b1655df28ef91e96b7f34faea76da04a5e56441c9ac779a2f9f"
+                "sha256:03ef2bad9d596ac04451d1627c18e434dc70f427109fd23911672ad5fe042f6d",
+                "sha256:60c2f283137b3aafc06f274949387eebcc78c8faad580a8755f6dc83c74bf0e2"
             ],
             "index": "pypi",
-            "version": "==19.7.1"
+            "version": "==19.7.2"
         },
         "cbor": {
             "hashes": [
@@ -101,11 +101,11 @@
         },
         "konfi": {
             "hashes": [
-                "sha256:0ad1cd9ca8960e51028895503293634517c7e316d46aee538c739c88d13c7d5e",
-                "sha256:170b9b190cdfeb3214de9f4f4ec405bd432bb34f642c5f5062e050e862a5594f"
+                "sha256:1cf67f153bbc8e9fd4112b573f43bec9410438a61e67dbce9bbe9bde7892137e",
+                "sha256:e65f1a4b759cffc4fee219a1027ea61067c1c2bb62fac40fe420e6303610478f"
             ],
             "index": "pypi",
-            "version": "==0.2.0"
+            "version": "==0.2.1"
         },
         "multidict": {
             "hashes": [

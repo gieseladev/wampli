@@ -1,5 +1,6 @@
-import setuptools
 import re
+
+import setuptools
 
 # we can't import the module because we most certainly don't have all the
 # dependencies installed. So let's just grab the text content and do some

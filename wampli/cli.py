@@ -9,6 +9,7 @@ import yarl
 from autobahn import wamp
 from autobahn.asyncio.component import Component
 
+import libwampli
 import wampli
 
 
@@ -85,8 +86,8 @@ def _get_component(args: argparse.Namespace) -> Component:
     return Component(realm=args.realm, transports=transports)
 
 
-def _get_session(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> wampli.Session:
-    return wampli.Session(_get_component(args), loop=loop)
+def _get_session(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> libwampli.Session:
+    return libwampli.Session(_get_component(args), loop=loop)
 
 
 def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
@@ -133,7 +134,7 @@ def _call_cmd(args: argparse.Namespace) -> None:
         async with _get_session(args, loop=loop) as session:
             return await session.call(args.uri, *call_args, **call_kwargs)
 
-    call_args, call_kwargs = wampli.parse_args(args.args)
+    call_args, call_kwargs = libwampli.parse_args(args.args)
     _run_cmd(cmd)
 
 
@@ -147,7 +148,7 @@ def _publish_cmd(args: argparse.Namespace) -> None:
             else:
                 return None
 
-    publish_args, publish_kwargs = wampli.parse_args(args.args)
+    publish_args, publish_kwargs = libwampli.parse_args(args.args)
     _run_cmd(cmd)
 
 
