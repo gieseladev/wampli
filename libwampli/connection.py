@@ -1,24 +1,27 @@
 import asyncio
 import dataclasses
+import functools
 import logging
-import pathlib
-from typing import Awaitable, List, Union
+from typing import Any, Awaitable, Dict, Iterable, List, Set, Tuple, Union
 
+import aiobservable
+import yarl
 from autobahn import wamp
 from autobahn.asyncio.component import Component
 
-__all__ = ["ConnectionConfig", "Connection",
+from .format import human_repr
+
+__all__ = ["ConnectionConfig", "SubscriptionEvent", "Connection",
            "get_transports"]
 
 log = logging.getLogger(__name__)
-
-DB_PATH = pathlib.Path("data/connections/db")
 
 
 @dataclasses.dataclass()
 class ConnectionConfig:
     realm: str
     transports: Union[str, List[dict]]
+    subscriptions: Iterable[str] = None
 
     def __str__(self) -> str:
         return f"(realm={self.realm}, endpoint={self.endpoint})"
@@ -42,16 +45,48 @@ def is_transport_lost(e: Exception) -> bool:
     return False
 
 
-class Connection:
+@dataclasses.dataclass()
+class SubscriptionEvent:
+    uri: str
+    args: Tuple[Any]
+    kwargs: Dict[str, Any]
+
+    def __str__(self) -> str:
+        def repr_multiline(o: object) -> str:
+            s = human_repr(o)
+            lines = s.splitlines()
+            if len(lines) > 1:
+                indented = "\n".join(f"  {line}" for line in lines)
+                return f"\n{indented}\n"
+            else:
+                return s
+
+        args_fmt = ", ".join(map(repr_multiline, self.args))
+        kwargs_fmt = "\n".join(f"  {key} = {repr_multiline(value)}"
+                               for key, value in self.kwargs.items())
+
+        fmt = f"{self.uri}"
+        if args_fmt:
+            fmt += f" ({args_fmt})"
+
+        if kwargs_fmt:
+            fmt += f" *\n{kwargs_fmt}"
+
+        return fmt
+
+
+class Connection(aiobservable.Observable):
     loop: asyncio.AbstractEventLoop
     config: ConnectionConfig
 
     _component: Component
     _session_future: asyncio.Future
 
+    _subscribed_topics: Set[str]
+
     def __init__(self, config: ConnectionConfig, *,
                  loop: asyncio.AbstractEventLoop = None) -> None:
-        self.loop = loop or asyncio.get_event_loop()
+        super().__init__(loop=loop or asyncio.get_event_loop())
 
         self.config = config
         self._component = Component(
@@ -60,8 +95,9 @@ class Connection:
             is_fatal=is_transport_lost,
         )
         self.__add_component_listeners()
-
         self.__reset_session()
+
+        self._subscribed_topics = set()
 
     def __repr__(self) -> str:
         return f"Connection({self.config!r})"
@@ -84,6 +120,11 @@ class Connection:
         @component.on_join
         async def on_join(*_) -> None:
             log.debug("%s joined", self)
+            subscriptions = self.config.subscriptions
+
+            if subscriptions:
+                coro_gen = (self.add_subscription(topic) for topic in subscriptions)
+                await asyncio.gather(*coro_gen, loop=self.loop)
 
         @component.on_disconnect
         def on_disconnect(_, *, was_clean: bool) -> None:
@@ -110,6 +151,25 @@ class Connection:
 
         return self._session_future
 
+    async def __on_event(self, topic: str, *args, **kwargs) -> None:
+        await self.emit(SubscriptionEvent(topic, args, kwargs))
+
+    def has_subscription(self, topic: str) -> bool:
+        return topic in self._subscribed_topics
+
+    async def add_subscription(self, topic: str) -> None:
+        if self.has_subscription(topic):
+            return
+
+        self._subscribed_topics.add(topic)
+
+        try:
+            session = await self.session
+            await session.subscribe(functools.partial(self.__on_event, topic), topic)
+        except Exception:
+            self._subscribed_topics.discard(topic)
+            raise
+
     @property
     def connected(self) -> bool:
         return self._session_future.done() and not self._session_future.exception()
@@ -124,7 +184,7 @@ class Connection:
         # some exceptions can only be captured by awaiting this,
         # however we don't want to wait until the component is "done"
         # (i.e. closed), so we race it with the session becoming available.
-        # So either the session becomes available or the "done" future results
+        # So either the session becomes available or the "done" future resolves
         # to an error.
         done_fut = self._component.start(loop=self.loop)
 
@@ -146,14 +206,19 @@ class Connection:
         await self._component.stop()
 
 
-def get_transports(url: str) -> List[dict]:
-    url = url.replace("tcp://", "rs://", 1)
+def get_transports(url: Union[str, yarl.URL]) -> List[dict]:
+    url = yarl.URL(url)
 
-    transport_type = "rawsocket" if url.startswith("rs://") else "websocket"
+    # autobahn python doesn't understand the tcp scheme
+    if url.scheme == "tcp":
+        url = url.with_scheme("rs")
 
-    transport = {
-        "url": url,
-        "type": transport_type,
-    }
+    if url.scheme in ("rs", "rss"):
+        t_type = "rawsocket"
+    else:
+        t_type = "websocket"
 
-    return [transport]
+    return [{
+        "type": t_type,
+        "url": str(url),
+    }]

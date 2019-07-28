@@ -1,13 +1,10 @@
 import argparse
 import asyncio
-import functools
 import signal
 import sys
 from typing import Any, Awaitable, Callable
 
-import yarl
 from autobahn import wamp
-from autobahn.asyncio.component import Component
 
 import libwampli
 import wampli
@@ -64,30 +61,13 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _get_component(args: argparse.Namespace) -> Component:
-    url = yarl.URL(args.url)
-
-    # autobahn python doesn't understand the tcp scheme
-    if url.scheme == "tcp":
-        url = url.with_scheme("rs")
-
-    if url.scheme in ("rs", "rss"):
-        t_type = "rawsocket"
-    else:
-        t_type = "websocket"
-
-    transports = [
-        {
-            "type": t_type,
-            "url": str(url),
-        },
-    ]
-
-    return Component(realm=args.realm, transports=transports)
+def get_connection_config(args: argparse.Namespace) -> libwampli.ConnectionConfig:
+    transports = libwampli.get_transports(args.url)
+    return libwampli.ConnectionConfig(realm=args.realm, transports=transports)
 
 
-def _get_session(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> libwampli.Session:
-    return libwampli.Session(_get_component(args), loop=loop)
+def get_session_context(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> libwampli.SessionContext:
+    return libwampli.SessionContext(get_connection_config(args), loop=loop)
 
 
 def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
@@ -126,12 +106,12 @@ def _run_cmd(cmd: Callable[[asyncio.AbstractEventLoop], Any]) -> None:
         if result is None:
             print("done")
         else:
-            print(result)
+            print(libwampli.human_result(result))
 
 
 def _call_cmd(args: argparse.Namespace) -> None:
     async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        async with _get_session(args, loop=loop) as session:
+        async with get_session_context(args, loop=loop) as session:
             return await session.call(args.uri, *call_args, **call_kwargs)
 
     call_args, call_kwargs = libwampli.parse_args(args.args)
@@ -140,7 +120,7 @@ def _call_cmd(args: argparse.Namespace) -> None:
 
 def _publish_cmd(args: argparse.Namespace) -> None:
     async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        async with _get_session(args, loop=loop) as session:
+        async with get_session_context(args, loop=loop) as session:
             # TODO provide options for acknowledge and so on
             ack = session.publish(args.uri, *publish_args, **publish_kwargs)
             if ack is not None:
@@ -153,22 +133,26 @@ def _publish_cmd(args: argparse.Namespace) -> None:
 
 
 def _subscribe_cmd(args: argparse.Namespace) -> None:
-    async def on_event(uri: str, *_args, **_kwargs) -> None:
-        print(f"{uri}: {_args} {_kwargs}")
+    async def on_event(event: libwampli.SubscriptionEvent) -> None:
+        print(event)
 
     async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        async with _get_session(args, loop=loop) as session:
-            gen = (session.subscribe(functools.partial(on_event, uri), uri) for uri in args.uri)
-            await asyncio.gather(*gen)
+        session_context = get_session_context(args, loop=loop)
+
+        session_context.on(libwampli.SubscriptionEvent, on_event)
+
+        async with session_context:
+            coro_gen = (session_context.add_subscription(uri) for uri in args.uri)
+            await asyncio.gather(*coro_gen)
             print(f"subscribed to {len(args.uri)} topic(s)")
 
-            await asyncio.sleep(100)
+            await session_context.wait()
 
     _run_cmd(cmd)
 
 
 def _shell_cmd(args: argparse.Namespace) -> None:
-    shell = wampli.Shell(_get_component(args))
+    shell = wampli.Shell(get_connection_config(args))
     shell.run()
 
 

@@ -4,10 +4,9 @@ import dataclasses
 import queue
 import textwrap
 import threading
-from typing import Any, Iterable, List, Mapping, NoReturn, Optional
+from typing import Any, Iterable, Mapping, NoReturn, Optional
 
 import txaio
-from autobahn.asyncio.component import Component
 from autobahn.wamp import ApplicationError
 
 import libwampli
@@ -25,13 +24,13 @@ class Task:
     kwargs: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
 
-def worker(component: Component, receive: queue.Queue, send: queue.Queue) -> None:
+def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue.Queue) -> None:
     """Thread worker which performs async tasks.
 
     You can send `STOP_SIGNAL` to the `receive` queue to stop the worker.
 
     Args:
-        component: WAMP Component to use
+        config: Connection config to create the connection from
         receive: Queue to get new tasks from.
             As soon as the worker is running it will pull `Task` instances
             from the queue and execute them. Each time a task is finished
@@ -42,8 +41,15 @@ def worker(component: Component, receive: queue.Queue, send: queue.Queue) -> Non
     asyncio.set_event_loop(loop)
     txaio.config.loop = loop
 
+    connection = libwampli.Connection(config, loop=loop)
+
+    async def on_subscription_event(event: libwampli.SubscriptionEvent) -> None:
+        print(f"received event: {event}")
+
+    connection.on(libwampli.SubscriptionEvent, on_subscription_event)
+
     async def handle_task(task: Task) -> None:
-        session = await libwampli.get_session(component, loop=loop)
+        session = await connection.session
 
         if task.action == "call":
             try:
@@ -51,17 +57,31 @@ def worker(component: Component, receive: queue.Queue, send: queue.Queue) -> Non
             except ApplicationError as e:
                 print(e.error_message())
             else:
-                print(result)
+                print(libwampli.human_result(result))
         elif task.action == "publish":
             ack = session.publish(*task.args, **task.kwargs)
             if ack is not None:
                 await ack
 
             print("done")
+        elif task.action == "add_listener":
+            try:
+                topic = next(iter(task.args))
+            except StopIteration:
+                print("no topic to add listener to provided")
+            else:
+                if connection.has_subscription(topic):
+                    print(f"already subscribed to {topic}")
+                else:
+                    await connection.add_subscription(topic)
         else:
             print(f"unknown task given to worker: {task}")
 
     async def runner() -> NoReturn:
+        print("connecting...")
+        await connection.open()
+        print("connected")
+
         async def _handle_task(_task: Task) -> None:
             try:
                 await handle_task(_task)
@@ -98,16 +118,16 @@ class Shell(cmd.Cmd):
 
     prompt = "(WAMPli) "
 
-    _component: Component
+    _connection_config: libwampli.ConnectionConfig
 
     _send_queue: queue.Queue
     _receive_queue: queue.Queue
     _worker_thread: Optional[threading.Thread]
 
-    def __init__(self, component: Component) -> None:
+    def __init__(self, config: libwampli.ConnectionConfig) -> None:
         super().__init__()
 
-        self._component = component
+        self._connection_config = config
 
         self._send_queue = queue.Queue()
         self._receive_queue = queue.Queue()
@@ -128,7 +148,7 @@ class Shell(cmd.Cmd):
         thread = threading.Thread(
             name="Shell worker",
             target=worker,
-            args=(self._component, self._send_queue, self._receive_queue)
+            args=(self._connection_config, self._send_queue, self._receive_queue)
         )
 
         self._worker_thread = thread
@@ -163,14 +183,18 @@ class Shell(cmd.Cmd):
         args, kwargs = libwampli.parse_args(arg)
         self._call(args, kwargs)
 
-    def complete_call(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
-        print(text, line, begidx, endidx)
-        return []
-
-    def do_publish(self, arg: str):
+    def do_publish(self, arg: str) -> None:
         """Publish to a topic."""
         args, kwargs = libwampli.parse_args(arg)
         libwampli.ready_uri(args)
 
         task = Task("publish", args, kwargs)
+        self._send_queue.put_nowait(task)
+
+    def do_listen(self, arg: str) -> None:
+        """Add a listener"""
+        args = [arg]
+        libwampli.ready_uri(args)
+
+        task = Task("add_listener", args)
         self._send_queue.put_nowait(task)
