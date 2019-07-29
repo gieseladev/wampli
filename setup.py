@@ -5,7 +5,7 @@ import setuptools
 # we can't import the module because we most certainly don't have all the
 # dependencies installed. So let's just grab the text content and do some
 # regex magic.
-with open("wampli/__init__.py", "r") as f:
+with open("libwampli/__init__.py", "r") as f:
     content = f.read()
 
 # we're specifically interested in __magic__ attributes like __version__
