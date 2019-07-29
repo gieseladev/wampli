@@ -17,7 +17,7 @@ class SessionContext(Connection):
         await self.close()
 
     async def wait(self) -> None:
-        await wait_for_leave(self._component, loop=self.loop)
+        await wait_for_leave(self._component, loop=self._loop)
 
 
 def wait_for_leave(c: Component, *, loop: asyncio.AbstractEventLoop) -> asyncio.Future:

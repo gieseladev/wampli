@@ -18,10 +18,10 @@
     "default": {
         "aiobservable": {
             "hashes": [
-                "sha256:d1012b5c537f9456748aac5ca2a1745d979a703d6d4cf045ef1fbed99a4b5dd7"
+                "sha256:1699520a9487d1703eeb9820d75280e920b61a772ff2acff3bbf148d5c1bab89"
             ],
             "index": "pypi",
-            "version": "==0.1.0"
+            "version": "==0.2.0"
         },
         "asn1crypto": {
             "hashes": [

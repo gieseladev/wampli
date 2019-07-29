@@ -67,17 +67,16 @@ class SubscriptionEvent:
 
 
 class Connection(aiobservable.Observable):
-    loop: asyncio.AbstractEventLoop
     config: ConnectionConfig
 
+    _loop: asyncio.get_event_loop()
     _component: Component
     _join_future: asyncio.Future
 
     _subscriptions: Dict[str, wamp.types.ISubscription]
 
-    def __init__(self, config: ConnectionConfig, *,
-                 loop: asyncio.AbstractEventLoop = None) -> None:
-        super().__init__(loop=loop or asyncio.get_event_loop())
+    def __init__(self, config: ConnectionConfig) -> None:
+        super().__init__()
 
         self.config = config
         self._component = Component(
@@ -87,7 +86,8 @@ class Connection(aiobservable.Observable):
         )
         self.__add_component_listeners()
 
-        self._join_future = self.loop.create_future()
+        self._loop = asyncio.get_event_loop()
+        self._join_future = self._loop.create_future()
 
         self._subscriptions = {}
 
@@ -133,12 +133,12 @@ class Connection(aiobservable.Observable):
 
             if subscriptions:
                 coro_gen = (self.add_subscription(topic) for topic in subscriptions)
-                await asyncio.gather(*coro_gen, loop=self.loop)
+                await asyncio.gather(*coro_gen)
 
         @component.on_leave
         def on_leave(*_) -> None:
             log.debug("%s: left session", self)
-            self.loop.create_future()
+            self._loop.create_future()
 
     async def __on_event(self, topic: str, *args, **kwargs) -> None:
         await self.emit(SubscriptionEvent(topic, args, kwargs))
@@ -178,7 +178,7 @@ class Connection(aiobservable.Observable):
 
     @property
     def session(self) -> Awaitable[wamp.ISession]:
-        return self.loop.create_task(self.get_session())
+        return self._loop.create_task(self.get_session())
 
     async def get_session(self) -> wamp.ISession:
         if not self.connected:
@@ -197,7 +197,7 @@ class Connection(aiobservable.Observable):
         # (i.e. closed), so we race it with the session becoming available.
         # So either the session becomes available or the "done" future resolves
         # to an error.
-        done_fut = self._component.start(loop=self.loop)
+        done_fut = self._component.start(loop=self._loop)
 
         done_fs, _ = await asyncio.wait(
             (done_fut, self._join_future),
