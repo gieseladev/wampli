@@ -66,8 +66,8 @@ def get_connection_config(args: argparse.Namespace) -> libwampli.ConnectionConfi
     return libwampli.ConnectionConfig(realm=args.realm, transports=transports)
 
 
-def get_session_context(args: argparse.Namespace, *, loop: asyncio.AbstractEventLoop) -> libwampli.SessionContext:
-    return libwampli.SessionContext(get_connection_config(args), loop=loop)
+def get_session_context(args: argparse.Namespace) -> libwampli.SessionContext:
+    return libwampli.SessionContext(get_connection_config(args))
 
 
 def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
@@ -92,12 +92,12 @@ def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
     loop.close()
 
 
-def _run_async_cmd(cmd: Callable[[asyncio.AbstractEventLoop], Any]) -> Any:
+def _run_async_cmd(cmd: Callable[[], Any]) -> Any:
     loop = asyncio.get_event_loop()
-    _run_async(loop, cmd(loop))
+    _run_async(loop, cmd())
 
 
-def _run_cmd(cmd: Callable[[asyncio.AbstractEventLoop], Any]) -> None:
+def _run_cmd(cmd: Callable[[], Any]) -> None:
     try:
         result = _run_async_cmd(cmd)
     except wamp.ApplicationError as e:
@@ -110,8 +110,8 @@ def _run_cmd(cmd: Callable[[asyncio.AbstractEventLoop], Any]) -> None:
 
 
 def _call_cmd(args: argparse.Namespace) -> None:
-    async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        async with get_session_context(args, loop=loop) as session:
+    async def cmd() -> None:
+        async with get_session_context(args) as session:
             return await session.call(args.uri, *call_args, **call_kwargs)
 
     call_args, call_kwargs = libwampli.parse_args(args.args)
@@ -119,8 +119,8 @@ def _call_cmd(args: argparse.Namespace) -> None:
 
 
 def _publish_cmd(args: argparse.Namespace) -> None:
-    async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        async with get_session_context(args, loop=loop) as session:
+    async def cmd() -> None:
+        async with get_session_context(args) as session:
             # TODO provide options for acknowledge and so on
             ack = session.publish(args.uri, *publish_args, **publish_kwargs)
             if ack is not None:
@@ -136,8 +136,8 @@ def _subscribe_cmd(args: argparse.Namespace) -> None:
     async def on_event(event: libwampli.SubscriptionEvent) -> None:
         print(event)
 
-    async def cmd(loop: asyncio.AbstractEventLoop) -> None:
-        session_context = get_session_context(args, loop=loop)
+    async def cmd() -> None:
+        session_context = get_session_context(args)
 
         session_context.on(libwampli.SubscriptionEvent, on_event)
 

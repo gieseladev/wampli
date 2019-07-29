@@ -121,7 +121,7 @@ class Connection(aiobservable.Observable):
             log.debug("%s: disconnected clean=%s", self, was_clean)
 
         @component.on_join
-        async def on_join(*_) -> None:
+        def on_join(*_) -> None:
             log.debug("%s joined", self)
 
             try:
@@ -129,6 +129,8 @@ class Connection(aiobservable.Observable):
             except asyncio.InvalidStateError:
                 pass
 
+        @component.on_ready
+        async def on_ready(*_) -> None:
             subscriptions = self.config.subscriptions
 
             if subscriptions:
@@ -194,9 +196,7 @@ class Connection(aiobservable.Observable):
 
         # some exceptions can only be captured by awaiting this,
         # however we don't want to wait until the component is "done"
-        # (i.e. closed), so we race it with the session becoming available.
-        # So either the session becomes available or the "done" future resolves
-        # to an error.
+        # (i.e. closed), so we race it with joining the session.
         done_fut = self._component.start(loop=self._loop)
 
         done_fs, _ = await asyncio.wait(

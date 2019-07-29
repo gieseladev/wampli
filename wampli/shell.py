@@ -24,7 +24,7 @@ class Task:
     kwargs: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
 
-def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue.Queue) -> None:
+def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
     """Thread worker which performs async tasks.
 
     You can send `STOP_SIGNAL` to the `receive` queue to stop the worker.
@@ -41,7 +41,7 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue
     asyncio.set_event_loop(loop)
     txaio.config.loop = loop
 
-    connection = libwampli.Connection(config, loop=loop)
+    connection = libwampli.Connection(config)
 
     async def on_subscription_event(event: libwampli.SubscriptionEvent) -> None:
         print(f"received event: {event}")
@@ -159,7 +159,7 @@ class Shell(cmd.Cmd):
         thread = threading.Thread(
             name="Shell worker",
             target=worker,
-            args=(self._connection_config, self._send_queue, self._receive_queue)
+            args=(self._connection_config, self._send_queue),
         )
 
         self._worker_thread = thread
