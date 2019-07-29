@@ -64,16 +64,26 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue
                 await ack
 
             print("done")
-        elif task.action == "add_listener":
+        elif task.action == "subscribe":
             try:
                 topic = next(iter(task.args))
             except StopIteration:
-                print("no topic to add listener to provided")
+                print("no topic provided")
             else:
                 if connection.has_subscription(topic):
                     print(f"already subscribed to {topic}")
                 else:
                     await connection.add_subscription(topic)
+        elif task.action == "unsubscribe":
+            try:
+                topic = next(iter(task.args))
+            except StopIteration:
+                print("no topic provided")
+            else:
+                if not connection.has_subscription(topic):
+                    print(f"not subscribed to {topic}")
+                else:
+                    await connection.remove_subscription(topic)
         else:
             print(f"unknown task given to worker: {task}")
 
@@ -97,6 +107,8 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue
             else:
                 loop.create_task(_handle_task(task))
 
+        await connection.close()
+
         this_task = asyncio.current_task()
         tasks = asyncio.all_tasks(loop)
         for task in tasks:
@@ -107,7 +119,6 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue, send: queue
     loop.close()
 
 
-# TODO subscribe
 # TODO alias uri
 
 class Shell(cmd.Cmd):
@@ -191,10 +202,18 @@ class Shell(cmd.Cmd):
         task = Task("publish", args, kwargs)
         self._send_queue.put_nowait(task)
 
-    def do_listen(self, arg: str) -> None:
-        """Add a listener"""
+    def do_subscribe(self, arg: str) -> None:
+        """Subscribe to a topic"""
         args = [arg]
         libwampli.ready_uri(args)
 
-        task = Task("add_listener", args)
+        task = Task("subscribe", args)
+        self._send_queue.put_nowait(task)
+
+    def do_unsubscribe(self, arg: str) -> None:
+        """Unsubscribe from a topic"""
+        args = [arg]
+        libwampli.ready_uri(args)
+
+        task = Task("unsubscribe", args)
         self._send_queue.put_nowait(task)

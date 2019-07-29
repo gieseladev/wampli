@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import functools
 import logging
-from typing import Any, Awaitable, Dict, Iterable, List, Set, Tuple, Union
+from typing import Any, Awaitable, Dict, Iterable, List, Tuple, Union
 
 import aiobservable
 import yarl
@@ -82,7 +82,7 @@ class Connection(aiobservable.Observable):
     _component: Component
     _session_future: asyncio.Future
 
-    _subscribed_topics: Set[str]
+    _subscriptions: Dict[str, wamp.types.ISubscription]
 
     def __init__(self, config: ConnectionConfig, *,
                  loop: asyncio.AbstractEventLoop = None) -> None:
@@ -97,7 +97,7 @@ class Connection(aiobservable.Observable):
         self.__add_component_listeners()
         self.__reset_session()
 
-        self._subscribed_topics = set()
+        self._subscriptions = {}
 
     def __repr__(self) -> str:
         return f"Connection({self.config!r})"
@@ -113,13 +113,14 @@ class Connection(aiobservable.Observable):
         component = self._component
 
         @component.on_connect
-        def on_connect(session: wamp.ISession, _) -> None:
+        def on_connect(*_) -> None:
             log.debug("%s: connected", self)
-            self.__fresh_session_future().set_result(session)
 
         @component.on_join
-        async def on_join(*_) -> None:
+        async def on_join(session: wamp.ISession, _) -> None:
             log.debug("%s joined", self)
+            self.__fresh_session_future().set_result(session)
+
             subscriptions = self.config.subscriptions
 
             if subscriptions:
@@ -155,20 +156,28 @@ class Connection(aiobservable.Observable):
         await self.emit(SubscriptionEvent(topic, args, kwargs))
 
     def has_subscription(self, topic: str) -> bool:
-        return topic in self._subscribed_topics
+        try:
+            return self._subscriptions[topic].active()
+        except KeyError:
+            return False
 
     async def add_subscription(self, topic: str) -> None:
         if self.has_subscription(topic):
             return
 
-        self._subscribed_topics.add(topic)
+        session = await self.session
+        self._subscriptions[topic] = await session.subscribe(
+            functools.partial(self.__on_event, topic),
+            topic,
+        )
 
+    async def remove_subscription(self, topic: str) -> None:
         try:
-            session = await self.session
-            await session.subscribe(functools.partial(self.__on_event, topic), topic)
-        except Exception:
-            self._subscribed_topics.discard(topic)
-            raise
+            subscription = self._subscriptions.pop(topic)
+        except KeyError:
+            return
+
+        await subscription.unsubscribe()
 
     @property
     def connected(self) -> bool:
