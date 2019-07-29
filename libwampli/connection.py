@@ -2,14 +2,14 @@ import asyncio
 import dataclasses
 import functools
 import logging
-from typing import Any, Awaitable, Dict, Iterable, List, Tuple, Union
+from typing import Any, Awaitable, Dict, Iterable, List, Optional, Tuple, Union
 
 import aiobservable
 import yarl
 from autobahn import wamp
 from autobahn.asyncio.component import Component
 
-from .format import human_repr
+from .format import human_repr, indent_multiline
 
 __all__ = ["ConnectionConfig", "SubscriptionEvent", "Connection",
            "get_transports"]
@@ -52,17 +52,8 @@ class SubscriptionEvent:
     kwargs: Dict[str, Any]
 
     def __str__(self) -> str:
-        def repr_multiline(o: object) -> str:
-            s = human_repr(o)
-            lines = s.splitlines()
-            if len(lines) > 1:
-                indented = "\n".join(f"  {line}" for line in lines)
-                return f"\n{indented}\n"
-            else:
-                return s
-
-        args_fmt = ", ".join(map(repr_multiline, self.args))
-        kwargs_fmt = "\n".join(f"  {key} = {repr_multiline(value)}"
+        args_fmt = ", ".join(indent_multiline(human_repr(arg)) for arg in self.args)
+        kwargs_fmt = "\n".join(f"  {key} = {indent_multiline(human_repr(value))}"
                                for key, value in self.kwargs.items())
 
         fmt = f"{self.uri}"
@@ -80,7 +71,7 @@ class Connection(aiobservable.Observable):
     config: ConnectionConfig
 
     _component: Component
-    _session_future: asyncio.Future
+    _join_future: asyncio.Future
 
     _subscriptions: Dict[str, wamp.types.ISubscription]
 
@@ -95,7 +86,8 @@ class Connection(aiobservable.Observable):
             is_fatal=is_transport_lost,
         )
         self.__add_component_listeners()
-        self.__reset_session()
+
+        self._join_future = self.loop.create_future()
 
         self._subscriptions = {}
 
@@ -116,10 +108,26 @@ class Connection(aiobservable.Observable):
         def on_connect(*_) -> None:
             log.debug("%s: connected", self)
 
+        @component.on_connectfailure
+        def on_fail(_, e: Exception) -> None:
+            log.debug("%s: failed to connect: %s", self, e)
+            try:
+                self._join_future.set_exception(e)
+            except asyncio.InvalidStateError:
+                pass
+
+        @component.on_disconnect
+        def on_disconnect(_, *, was_clean: bool) -> None:
+            log.debug("%s: disconnected clean=%s", self, was_clean)
+
         @component.on_join
-        async def on_join(session: wamp.ISession, _) -> None:
+        async def on_join(*_) -> None:
             log.debug("%s joined", self)
-            self.__fresh_session_future().set_result(session)
+
+            try:
+                self._join_future.set_result(None)
+            except asyncio.InvalidStateError:
+                pass
 
             subscriptions = self.config.subscriptions
 
@@ -127,30 +135,10 @@ class Connection(aiobservable.Observable):
                 coro_gen = (self.add_subscription(topic) for topic in subscriptions)
                 await asyncio.gather(*coro_gen, loop=self.loop)
 
-        @component.on_disconnect
-        def on_disconnect(_, *, was_clean: bool) -> None:
-            log.debug("%s: disconnected clean=%s", self, was_clean)
-            self.__reset_session()
-
-        @component.on_connectfailure
-        def on_fail(_, e: Exception) -> None:
-            log.debug("%s: failed to connect: %s", self, e)
-            self.__fresh_session_future().set_exception(e)
-
         @component.on_leave
         def on_leave(*_) -> None:
             log.debug("%s: left session", self)
-            self.__reset_session()
-
-    def __reset_session(self) -> None:
-        self._session_future = self.loop.create_future()
-
-    def __fresh_session_future(self) -> asyncio.Future:
-        if self._session_future.done():
-            log.debug("%s: resetting session future: %s", self, self._session_future)
-            self.__reset_session()
-
-        return self._session_future
+            self.loop.create_future()
 
     async def __on_event(self, topic: str, *args, **kwargs) -> None:
         await self.emit(SubscriptionEvent(topic, args, kwargs))
@@ -180,12 +168,26 @@ class Connection(aiobservable.Observable):
         await subscription.unsubscribe()
 
     @property
+    def component_session(self) -> Optional[wamp.ISession]:
+        return self._component._session
+
+    @property
     def connected(self) -> bool:
-        return self._session_future.done() and not self._session_future.exception()
+        session = self.component_session
+        return session and session.is_connected()
 
     @property
     def session(self) -> Awaitable[wamp.ISession]:
-        return asyncio.shield(self._session_future, loop=self.loop)
+        return self.loop.create_task(self.get_session())
+
+    async def get_session(self) -> wamp.ISession:
+        if not self.connected:
+            await self.open()
+
+        session = self.component_session
+        assert session, "session should not be None at this point"
+
+        return session
 
     async def open(self) -> None:
         log.debug("%s: opening connection", self)
@@ -198,7 +200,7 @@ class Connection(aiobservable.Observable):
         done_fut = self._component.start(loop=self.loop)
 
         done_fs, _ = await asyncio.wait(
-            (done_fut, self.session),
+            (done_fut, self._join_future),
             return_when=asyncio.FIRST_COMPLETED
         )
 
