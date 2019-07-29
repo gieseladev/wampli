@@ -75,7 +75,7 @@ class Connection(aiobservable.Observable):
 
     _subscriptions: Dict[str, wamp.types.ISubscription]
 
-    def __init__(self, config: ConnectionConfig) -> None:
+    def __init__(self, config: ConnectionConfig, *, loop: asyncio.AbstractEventLoop = None) -> None:
         super().__init__()
 
         self.config = config
@@ -86,7 +86,7 @@ class Connection(aiobservable.Observable):
         )
         self.__add_component_listeners()
 
-        self._loop = asyncio.get_event_loop()
+        self._loop = loop or asyncio.get_event_loop()
         self._join_future = self._loop.create_future()
 
         self._subscriptions = {}
