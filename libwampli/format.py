@@ -15,9 +15,16 @@ def human_repr(o: Any) -> str:
         return str(o)
 
     try:
-        return yaml.dump(o)
+        s = yaml.dump(o)
     except yaml.YAMLError:
         return str(o)
+
+    # we don't really care about the document termination
+    # and the newlines
+    if s.endswith("\n...\n"):
+        return s[:-5]
+    else:
+        return s
 
 
 def human_result(result: Any) -> str:

@@ -168,11 +168,11 @@ class Connection(aiobservable.Observable):
             topic,
         )
 
-    def plan_subscription(self, topic: str) -> None:
-        if self.has_planned_subscription(topic):
-            return
+    def get_planned_subscriptions(self) -> Tuple[str, ...]:
+        return tuple(self._planned_subscriptions)
 
-        self._planned_subscriptions.add(topic)
+    def plan_subscription(self, *topics: str) -> None:
+        self._planned_subscriptions.update(topics)
 
     async def add_subscription(self, topic: str) -> None:
         self.plan_subscription(topic)
@@ -182,8 +182,8 @@ class Connection(aiobservable.Observable):
         else:
             log.debug("%s: not connected yet, subscribing when ready", self)
 
-    def unplan_subscription(self, topic: str) -> None:
-        self._planned_subscriptions.discard(topic)
+    def unplan_subscription(self, *topics: str) -> None:
+        self._planned_subscriptions.difference_update(topics)
 
     async def remove_subscription(self, topic: str) -> None:
         self.unplan_subscription(topic)
