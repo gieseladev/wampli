@@ -21,7 +21,6 @@ log = logging.getLogger(__name__)
 class ConnectionConfig:
     realm: str
     transports: Union[str, List[dict]]
-    subscriptions: Set[str] = dataclasses.field(default_factory=set)
 
     def __str__(self) -> str:
         return f"(realm={self.realm}, endpoint={self.endpoint})"
@@ -79,9 +78,12 @@ class Connection(aiobservable.Observable):
     _component: Component
     _join_future: asyncio.Future
 
-    _subscriptions: Dict[str, wamp.types.ISubscription]
+    _planned_subscriptions: Set[str]
+    _active_subscriptions: Dict[str, wamp.types.ISubscription]
 
-    def __init__(self, config: ConnectionConfig, *, loop: asyncio.AbstractEventLoop = None) -> None:
+    def __init__(self, config: ConnectionConfig, *,
+                 planned_subscriptions: Set[str] = None,
+                 loop: asyncio.AbstractEventLoop = None) -> None:
         super().__init__()
 
         self.config = config
@@ -96,7 +98,8 @@ class Connection(aiobservable.Observable):
         self._loop = loop or asyncio.get_event_loop()
         self._join_future = self._loop.create_future()
 
-        self._subscriptions = {}
+        self._planned_subscriptions = planned_subscriptions or set()
+        self._active_subscriptions = {}
 
     def __repr__(self) -> str:
         return f"Connection({self.config!r})"
@@ -138,7 +141,7 @@ class Connection(aiobservable.Observable):
 
         @component.on_ready
         async def on_ready(*_) -> None:
-            coro_gen = (self.add_subscription(topic) for topic in self.config.subscriptions)
+            coro_gen = (self._subscribe(topic) for topic in self._planned_subscriptions)
             await asyncio.gather(*coro_gen)
 
         @component.on_leave
@@ -149,32 +152,44 @@ class Connection(aiobservable.Observable):
     async def __on_event(self, topic: str, *args, **kwargs) -> None:
         await self.emit(SubscriptionEvent(topic, args, kwargs))
 
-    def has_subscription(self, topic: str) -> bool:
-        return topic in self.config.subscriptions
+    def has_planned_subscription(self, topic: str) -> bool:
+        return topic in self._planned_subscriptions
+
+    def has_active_subscription(self, topic: str) -> bool:
+        try:
+            return self._active_subscriptions[topic].active()
+        except KeyError:
+            return False
 
     async def _subscribe(self, topic: str) -> None:
         session = await self.session
-        self._subscriptions[topic] = await session.subscribe(
+        self._active_subscriptions[topic] = await session.subscribe(
             functools.partial(self.__on_event, topic),
             topic,
         )
 
-    async def add_subscription(self, topic: str) -> None:
-        if self.has_subscription(topic):
+    def plan_subscription(self, topic: str) -> None:
+        if self.has_planned_subscription(topic):
             return
 
-        self.config.subscriptions.add(topic)
+        self._planned_subscriptions.add(topic)
+
+    async def add_subscription(self, topic: str) -> None:
+        self.plan_subscription(topic)
 
         if self.connected:
             await self._subscribe(topic)
         else:
             log.debug("%s: not connected yet, subscribing when ready", self)
 
+    def unplan_subscription(self, topic: str) -> None:
+        self._planned_subscriptions.discard(topic)
+
     async def remove_subscription(self, topic: str) -> None:
-        self.config.subscriptions.discard(topic)
+        self.unplan_subscription(topic)
 
         try:
-            subscription = self._subscriptions.pop(topic)
+            subscription = self._active_subscriptions.pop(topic)
         except KeyError:
             return
 

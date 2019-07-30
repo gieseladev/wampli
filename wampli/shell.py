@@ -70,7 +70,7 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
             except StopIteration:
                 print("no topic provided")
             else:
-                if connection.has_subscription(topic):
+                if connection.has_planned_subscription(topic):
                     print(f"already subscribed to {topic}")
                 else:
                     await connection.add_subscription(topic)
@@ -80,7 +80,7 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
             except StopIteration:
                 print("no topic provided")
             else:
-                if not connection.has_subscription(topic):
+                if not connection.has_planned_subscription(topic):
                     print(f"not subscribed to {topic}")
                 else:
                     await connection.remove_subscription(topic)
