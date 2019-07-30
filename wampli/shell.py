@@ -1,3 +1,9 @@
+"""Interactive Shell for WAMPli.
+
+Provides a worker thread which runs the `libwampli.Connection` in the
+background while the actual shell runs in the foreground.
+"""
+
 import asyncio
 import cmd
 import dataclasses
@@ -11,7 +17,8 @@ from autobahn.wamp import ApplicationError
 
 import libwampli
 
-__all__ = ["Shell"]
+__all__ = ["Task", "STOP_SIGNAL", "worker",
+           "Shell"]
 
 # special signal to indicate that the worker thread should stop
 STOP_SIGNAL = object()
@@ -19,6 +26,15 @@ STOP_SIGNAL = object()
 
 @dataclasses.dataclass()
 class Task:
+    """Task to be executed by a `worker`.
+
+    Meaning of `args` and `kwargs` depend on the `action`.
+
+    Attributes:
+        action (str): Action to perform.
+        args (Iterable[Any]): Arguments for the action.
+        kwargs (Mapping[str, Any]): Keyword arguments for the action.
+    """
     action: str
     args: Iterable[Any] = dataclasses.field(default_factory=list)
     kwargs: Mapping[str, Any] = dataclasses.field(default_factory=dict)
@@ -28,6 +44,14 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
     """Thread worker which performs async tasks.
 
     You can send `STOP_SIGNAL` to the `receive` queue to stop the worker.
+
+    Tasks:
+        call: args and kwargs are passed to `autobahn.wamp.ISession.call`.
+        publish: args and kwargs are passed to `autobahn.wamp.ISession.publish`.
+        subscribe: subscribe to a topic. The first item in args is used as the
+            topic.
+        unsubscribe: Unsubscribe from a topic. The first item in args is used as
+            the topic.
 
     Args:
         config: Connection config to create the connection from
@@ -123,6 +147,11 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
 # TODO alias uri
 
 class Shell(cmd.Cmd):
+    """Interactive shell for WAMP.
+
+    Args:
+        config: Config to use to create the `libwampli.Connection`.
+    """
     intro = textwrap.dedent("""
         Type 'help' or '?' to list all commands. 
         Use 'exit' to exit the shell.
@@ -146,9 +175,16 @@ class Shell(cmd.Cmd):
 
     @property
     def worker_running(self) -> bool:
+        """Whether the worker thread is running."""
         return self._worker_thread and self._worker_thread.is_alive()
 
     def run(self) -> None:
+        """Run the shell..
+
+        This means starting the worker thread and entering
+        the shell loop until the user exits.
+        This function blocks until the shell loop is completed.
+        """
         self._start_worker()
 
         try:
@@ -177,6 +213,12 @@ class Shell(cmd.Cmd):
         return True
 
     def default(self, line: str) -> None:
+        """Default command used when no other command matches.
+
+        This detects special function style calls which are then treated
+        as if they were call commands.
+        Otherwise the base class' method is used.
+        """
         args = libwampli.split_function_style(line)
         if args:
             args, kwargs = libwampli.parse_args(args)

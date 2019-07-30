@@ -1,3 +1,5 @@
+"""Formatting WAMP related things."""
+
 import dataclasses
 from typing import Any
 
@@ -28,6 +30,11 @@ def human_repr(o: Any) -> str:
 
 
 def human_result(result: Any) -> str:
+    """Convert the given result to human readable text.
+
+    Treats `None` as an ok sign. Apart from this the only difference
+    to `human_repr` is that it applies `indent_multiline` automatically.
+    """
     if result is None:
         return "ok"
 
@@ -35,6 +42,14 @@ def human_result(result: Any) -> str:
 
 
 def indent_multiline(s: str, indentation: str = "  ", add_newlines: bool = True) -> str:
+    """Indent the given string if it contains more than one line.
+
+    Args:
+        s: String to indent
+        indentation: Indentation to prepend to each line.
+        add_newlines: Whether to add newlines surrounding the result
+            if indentation was added.
+    """
     lines = s.splitlines()
     if len(lines) <= 1:
         return s

@@ -1,3 +1,5 @@
+"""WAMPli cli."""
+
 import argparse
 import asyncio
 import signal
@@ -62,15 +64,44 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def get_connection_config(args: argparse.Namespace) -> libwampli.ConnectionConfig:
+    """Create a connection config from the cli args.
+
+    Args:
+        args: Argument Namespace from `get_parser`.
+
+    Returns:
+        Connection configuration for `libwampli`
+    """
     transports = libwampli.get_transports(args.url)
     return libwampli.ConnectionConfig(realm=args.realm, transports=transports)
 
 
 def get_session_context(args: argparse.Namespace) -> libwampli.SessionContext:
+    """Create a session context from the cli args.
+
+    Args:
+        args: Argument Namespace from `get_parser`.
+
+    Returns:
+        Context manager for `libwampli.Connection` configured
+        to the router denoted by the arguments.
+    """
     return libwampli.SessionContext(get_connection_config(args))
 
 
 def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
+    """Run a coroutine.
+
+    Does some special signal handling to perform a graceful exit.
+
+    Args:
+        loop: Event loop to run coroutine in.
+        coro: Coroutine to run
+
+    Returns:
+        Result of the coroutine.
+    """
+
     def graceful_exit() -> None:
         pending = asyncio.Task.all_tasks()
         for task in pending:
@@ -93,23 +124,28 @@ def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
 
 
 def _run_async_cmd(cmd: Callable[[], Any]) -> Any:
+    """Run the coroutine and return its return value."""
     loop = asyncio.get_event_loop()
     _run_async(loop, cmd())
 
 
 def _run_cmd(cmd: Callable[[], Any]) -> None:
+    """Run a WAMP command.
+
+    Uses `_run_async_cmd` to run the command, but handles return values
+    and exceptions.
+    """
     try:
         result = _run_async_cmd(cmd)
     except wamp.ApplicationError as e:
         sys.exit(e.error_message())
     else:
-        if result is None:
-            print("done")
-        else:
-            print(libwampli.human_result(result))
+        print(libwampli.human_result(result))
 
 
 def _call_cmd(args: argparse.Namespace) -> None:
+    """Call command."""
+
     async def cmd() -> None:
         async with get_session_context(args) as session:
             return await session.call(args.uri, *call_args, **call_kwargs)
@@ -119,6 +155,8 @@ def _call_cmd(args: argparse.Namespace) -> None:
 
 
 def _publish_cmd(args: argparse.Namespace) -> None:
+    """Publish command."""
+
     async def cmd() -> None:
         async with get_session_context(args) as session:
             # TODO provide options for acknowledge and so on
@@ -133,6 +171,8 @@ def _publish_cmd(args: argparse.Namespace) -> None:
 
 
 def _subscribe_cmd(args: argparse.Namespace) -> None:
+    """Subscribe command."""
+
     async def on_event(event: libwampli.SubscriptionEvent) -> None:
         print(event)
 
@@ -146,12 +186,16 @@ def _subscribe_cmd(args: argparse.Namespace) -> None:
             await asyncio.gather(*coro_gen)
             print(f"subscribed to {len(args.uri)} topic(s)")
 
-            await session_context.wait()
+            await session_context.wait_done()
 
     _run_cmd(cmd)
 
 
 def _shell_cmd(args: argparse.Namespace) -> None:
+    """Shell command.
+
+    Creates a new `wampli.Shell` and runs it.
+    """
     shell = wampli.Shell(get_connection_config(args))
     shell.run()
 

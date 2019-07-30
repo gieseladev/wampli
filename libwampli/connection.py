@@ -1,3 +1,5 @@
+"""Connection to a WAMP router."""
+
 import asyncio
 import dataclasses
 import functools
@@ -19,6 +21,12 @@ log = logging.getLogger(__name__)
 
 @dataclasses.dataclass()
 class ConnectionConfig:
+    """Config for a WAMP connection.
+
+    Attributes:
+        realm (str): Realm to connect to
+        transports (Union[str, List[dict]]): Transports to use.
+    """
     realm: str
     transports: Union[str, List[dict]]
 
@@ -27,6 +35,11 @@ class ConnectionConfig:
 
     @property
     def endpoint(self) -> str:
+        """URL of the WAMP router.
+
+        Not necessarily the correct router url if multiple transports
+        were specified.
+        """
         if isinstance(self.transports, str):
             return self.transports
 
@@ -37,6 +50,7 @@ class ConnectionConfig:
 
 
 def is_transport_lost(e: Exception) -> bool:
+    """Check whether the given exception is `autobahn.wamp.TransportLost`."""
     if isinstance(e, wamp.TransportLost):
         log.info("encountered transport lost, treating as fatal to avoid reconnect. %s", e)
         return True
@@ -46,6 +60,13 @@ def is_transport_lost(e: Exception) -> bool:
 
 @dataclasses.dataclass()
 class SubscriptionEvent:
+    """Event emitted when an event of a subscribed topic is received.
+
+    Attributes:
+        uri (str): Topic of the event.
+        args (Tuple[Any]): Arguments of the event.
+        kwargs (Dict[str, Any]): Keyword arguments of the event.
+    """
     uri: str
     args: Tuple[Any]
     kwargs: Dict[str, Any]
@@ -64,14 +85,32 @@ class SubscriptionEvent:
         return fmt
 
     def format_args(self) -> str:
+        """Format the arguments into a human readable format.
+
+        Uses `human_repr`.
+        """
         return ", ".join(indent_multiline(human_repr(arg)) for arg in self.args)
 
     def format_kwargs(self) -> str:
+        """Format the keyword arguments into a human readable format.
+
+        Uses `human_repr`.
+        """
         return "\n".join(f"  {key} = {indent_multiline(human_repr(value))}"
                          for key, value in self.kwargs.items())
 
 
 class Connection(aiobservable.Observable):
+    """Connection to a WAMP router.
+
+    Args:
+        config: Connection config
+        planned_subscriptions: Set of topics to subscribe to once connected
+        loop: Specify the event loop to be used.
+
+    Attributes:
+        config (ConnectionConfig): Config that was passed to the constructor.
+    """
     config: ConnectionConfig
 
     _loop: asyncio.get_event_loop()
@@ -109,6 +148,7 @@ class Connection(aiobservable.Observable):
 
     @property
     def component(self) -> Component:
+        """Underlying autobahn component."""
         return self._component
 
     def __add_component_listeners(self) -> None:
@@ -153,9 +193,15 @@ class Connection(aiobservable.Observable):
         await self.emit(SubscriptionEvent(topic, args, kwargs))
 
     def has_planned_subscription(self, topic: str) -> bool:
+        """Check whether the given topic is a planned subscription."""
         return topic in self._planned_subscriptions
 
     def has_active_subscription(self, topic: str) -> bool:
+        """Check whether the given topic is currently subscribed to.
+
+        This implies that the connection is connected and the subscription
+        is active.
+        """
         try:
             return self._active_subscriptions[topic].active()
         except KeyError:
@@ -169,12 +215,21 @@ class Connection(aiobservable.Observable):
         )
 
     def get_planned_subscriptions(self) -> Tuple[str, ...]:
+        """Get all planned subscription topics."""
         return tuple(self._planned_subscriptions)
 
     def plan_subscription(self, *topics: str) -> None:
+        """Add the given topic(s) to the planned subscriptions.
+
+        A planned subscriptions will be subscribed to once the connection
+        is connected.
+        If already connected, use `add_subscription`.
+        """
         self._planned_subscriptions.update(topics)
 
     async def add_subscription(self, topic: str) -> None:
+        """Add the topic to the planned subscriptions and subscribe to it if
+        connected."""
         self.plan_subscription(topic)
 
         if self.connected:
@@ -183,9 +238,11 @@ class Connection(aiobservable.Observable):
             log.debug("%s: not connected yet, subscribing when ready", self)
 
     def unplan_subscription(self, *topics: str) -> None:
+        """Remove the topic(s) from the planned subscriptions."""
         self._planned_subscriptions.difference_update(topics)
 
     async def remove_subscription(self, topic: str) -> None:
+        """Remove the given topic from the planned subscriptions and unsubscribe."""
         self.unplan_subscription(topic)
 
         try:
@@ -197,18 +254,31 @@ class Connection(aiobservable.Observable):
 
     @property
     def component_session(self) -> Optional[wamp.ISession]:
+        """Underlying component's session.
+
+        Will be `None` if not connected.
+        """
         return self._component._session
 
     @property
     def connected(self) -> bool:
+        """Whether connection is connected to the router."""
         session = self.component_session
         return session and session.is_connected()
 
     @property
     def session(self) -> Awaitable[wamp.ISession]:
+        """Future resolving to a session once joined.
+
+        Resolves right away if already connected.
+        """
         return self._loop.create_task(self.get_session())
 
     async def get_session(self) -> wamp.ISession:
+        """Get the session.
+
+        If not connected this opens the connection.
+        """
         if not self.connected:
             await self.open()
 
@@ -218,6 +288,10 @@ class Connection(aiobservable.Observable):
         return session
 
     async def open(self) -> None:
+        """Open the connection.
+
+        Waits until the connection is established and the session available.
+        """
         log.debug("%s: opening connection", self)
 
         # some exceptions can only be captured by awaiting this,
@@ -239,6 +313,10 @@ class Connection(aiobservable.Observable):
             raise
 
     async def close(self) -> None:
+        """Close the connection.
+
+        Waits until the component is done.
+        """
         if not self.connected:
             log.debug("%s: already closed", self)
             return
@@ -251,6 +329,11 @@ class Connection(aiobservable.Observable):
         await self.wait_done()
 
     async def wait_done(self) -> None:
+        """Wait for the component to be done.
+
+        Being done means that the component is stopped.
+        This will wait indefinitely if the component isn't stopped.
+        """
         done_f = self._component._done_f
         if done_f:
             try:
@@ -260,6 +343,10 @@ class Connection(aiobservable.Observable):
 
 
 def get_transports(url: Union[str, yarl.URL]) -> List[dict]:
+    """Get the transports for the given url.
+
+    This treats the tcp scheme as a rawsocket connection.
+    """
     url = yarl.URL(url)
 
     # autobahn python doesn't understand the tcp scheme

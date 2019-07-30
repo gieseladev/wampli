@@ -1,3 +1,5 @@
+"""Argument parsing."""
+
 import io
 import re
 import shlex
