@@ -107,6 +107,7 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
             else:
                 loop.create_task(_handle_task(task))
 
+        print("waiting for connection to close!")
         await connection.close()
 
         this_task = asyncio.current_task()

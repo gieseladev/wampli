@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import functools
 import logging
-from typing import Any, Awaitable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple, Union
 
 import aiobservable
 import yarl
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 class ConnectionConfig:
     realm: str
     transports: Union[str, List[dict]]
-    subscriptions: Iterable[str] = None
+    subscriptions: Set[str] = dataclasses.field(default_factory=set)
 
     def __str__(self) -> str:
         return f"(realm={self.realm}, endpoint={self.endpoint})"
@@ -52,18 +52,24 @@ class SubscriptionEvent:
     kwargs: Dict[str, Any]
 
     def __str__(self) -> str:
-        args_fmt = ", ".join(indent_multiline(human_repr(arg)) for arg in self.args)
-        kwargs_fmt = "\n".join(f"  {key} = {indent_multiline(human_repr(value))}"
-                               for key, value in self.kwargs.items())
-
         fmt = f"{self.uri}"
+
+        args_fmt = self.format_args()
         if args_fmt:
             fmt += f" ({args_fmt})"
 
+        kwargs_fmt = self.format_kwargs()
         if kwargs_fmt:
             fmt += f" *\n{kwargs_fmt}"
 
         return fmt
+
+    def format_args(self) -> str:
+        return ", ".join(indent_multiline(human_repr(arg)) for arg in self.args)
+
+    def format_kwargs(self) -> str:
+        return "\n".join(f"  {key} = {indent_multiline(human_repr(value))}"
+                         for key, value in self.kwargs.items())
 
 
 class Connection(aiobservable.Observable):
@@ -82,6 +88,7 @@ class Connection(aiobservable.Observable):
         self._component = Component(
             realm=config.realm,
             transports=config.transports,
+            # issue! see https://github.com/crossbario/autobahn-python/issues/1231
             is_fatal=is_transport_lost,
         )
         self.__add_component_listeners()
@@ -131,11 +138,8 @@ class Connection(aiobservable.Observable):
 
         @component.on_ready
         async def on_ready(*_) -> None:
-            subscriptions = self.config.subscriptions
-
-            if subscriptions:
-                coro_gen = (self.add_subscription(topic) for topic in subscriptions)
-                await asyncio.gather(*coro_gen)
+            coro_gen = (self.add_subscription(topic) for topic in self.config.subscriptions)
+            await asyncio.gather(*coro_gen)
 
         @component.on_leave
         def on_leave(*_) -> None:
@@ -146,22 +150,29 @@ class Connection(aiobservable.Observable):
         await self.emit(SubscriptionEvent(topic, args, kwargs))
 
     def has_subscription(self, topic: str) -> bool:
-        try:
-            return self._subscriptions[topic].active()
-        except KeyError:
-            return False
+        return topic in self.config.subscriptions
 
-    async def add_subscription(self, topic: str) -> None:
-        if self.has_subscription(topic):
-            return
-
+    async def _subscribe(self, topic: str) -> None:
         session = await self.session
         self._subscriptions[topic] = await session.subscribe(
             functools.partial(self.__on_event, topic),
             topic,
         )
 
+    async def add_subscription(self, topic: str) -> None:
+        if self.has_subscription(topic):
+            return
+
+        self.config.subscriptions.add(topic)
+
+        if self.connected:
+            await self._subscribe(topic)
+        else:
+            log.debug("%s: not connected yet, subscribing when ready", self)
+
     async def remove_subscription(self, topic: str) -> None:
+        self.config.subscriptions.discard(topic)
+
         try:
             subscription = self._subscriptions.pop(topic)
         except KeyError:
@@ -213,8 +224,24 @@ class Connection(aiobservable.Observable):
             raise
 
     async def close(self) -> None:
+        if not self.connected:
+            log.debug("%s: already closed", self)
+            return
+
         log.debug("%s: closing connection", self)
-        await self._component.stop()
+        fut = self.component_session.leave()
+        if fut:
+            await fut
+
+        await self.wait_done()
+
+    async def wait_done(self) -> None:
+        done_f = self._component._done_f
+        if done_f:
+            try:
+                await done_f
+            except Exception:
+                log.exception("error happened cool")
 
 
 def get_transports(url: Union[str, yarl.URL]) -> List[dict]:
