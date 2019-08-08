@@ -4,12 +4,12 @@ import io
 import re
 import shlex
 import tokenize
-from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Pattern, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Pattern, Tuple, Union, Optional
 
 import yaml
 
 __all__ = ["parse_arg_value", "parse_args",
-           "split_function_style", "split_arg_string",
+           "split_function_style", "split_arg_string", "split_kwarg",
            "ready_uri"]
 
 # match: wamp.session.get(12345, key=value)
@@ -61,13 +61,22 @@ def split_arg_string(arg: str) -> List[str]:
     return res or shlex.split(arg)
 
 
+# match: key=value
+RE_KWARGS_MATCH: Pattern = re.compile(r"^([a-z][a-z0-9_]{2,})\s*=(.+)$")
+
+
+def split_kwarg(arg: str) -> Tuple[Optional[str], str]:
+    match = RE_KWARGS_MATCH.match(arg)
+    if match is None:
+        return None, arg
+
+    k, v = match.groups()
+    return k, v
+
+
 def parse_arg_value(val: str) -> Any:
     """Parse a string value into its Python representation."""
     return yaml.safe_load(val)
-
-
-# match: key=value
-RE_KWARGS_MATCH: Pattern = re.compile(r"^([a-z][a-z0-9_]{2,})\s*=(.*)$")
 
 
 def parse_args(args: Union[Iterable[str], str]) -> Tuple[List[Any], Dict[str, Any]]:
@@ -84,13 +93,13 @@ def parse_args(args: Union[Iterable[str], str]) -> Tuple[List[Any], Dict[str, An
     _kwargs: Dict[str, Any] = {}
 
     for arg in args:
-        match = RE_KWARGS_MATCH.match(arg)
+        key, raw_value = split_kwarg(arg)
+        value = parse_arg_value(raw_value)
 
-        if match is None:
-            _args.append(parse_arg_value(arg))
+        if key is None:
+            _args.append(value)
         else:
-            key, value = match.groups()
-            _kwargs[key] = parse_arg_value(value)
+            _kwargs[key] = value
 
     return _args, _kwargs
 

@@ -4,6 +4,7 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+pytest = "*"
 
 [packages]
 autobahn = "*"
@@ -18,3 +19,4 @@ python_version = "3.7"
 
 [scripts]
 wampli = "python -m wampli"
+tests = "python -m pytest"
