@@ -10,4 +10,4 @@ from .format import *
 from .session import *
 
 __author__ = "Giesela Inc."
-__version__ = "0.1.7"
+__version__ = "0.1.8"
