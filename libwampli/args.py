@@ -4,7 +4,7 @@ import io
 import re
 import shlex
 import tokenize
-from typing import Any, Dict, Iterable, List, MutableSequence, Pattern, Tuple, Union
+from typing import Any, Dict, Iterable, List, MutableSequence, Pattern, Tuple, Union, Mapping
 
 import yaml
 
@@ -95,7 +95,19 @@ def parse_args(args: Union[Iterable[str], str]) -> Tuple[List[Any], Dict[str, An
     return _args, _kwargs
 
 
-def ready_uri(args: MutableSequence[Any]) -> None:
+def ready_uri(args: MutableSequence[Any], *, aliases: Mapping[str, str] = None) -> None:
+    """Treat the first argument as the uri prepare it.
+
+    The given args may be mutated.
+
+    Args:
+        args: Arguments where the first argument is to be treated as a uri.
+        aliases: Mapping of alias to uri which is used to replace the uri.
+
+    Raises:
+        IndexError: If args is empty.
+        TypeError: If the first argument isn't a string.
+    """
     try:
         uri = args[0]
     except IndexError:
@@ -103,3 +115,11 @@ def ready_uri(args: MutableSequence[Any]) -> None:
 
     if not isinstance(uri, str):
         raise TypeError("URI must be a string")
+
+    if aliases:
+        try:
+            uri = aliases[uri]
+        except KeyError:
+            pass
+
+    args[0] = uri
