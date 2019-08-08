@@ -1,7 +1,8 @@
-from typing import List, Optional, Tuple, Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
+
+import pytest
 
 import libwampli
-import pytest
 
 
 @pytest.mark.parametrize("inp,expected", [

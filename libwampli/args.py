@@ -4,7 +4,7 @@ import io
 import re
 import shlex
 import tokenize
-from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Pattern, Tuple, Union, Optional
+from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Optional, Pattern, Tuple, Union
 
 import yaml
 
