@@ -1,11 +1,47 @@
 """Formatting WAMP related things."""
 
 import dataclasses
-from typing import Any
+import json
+from typing import Any, Iterable, Mapping
 
 import yaml
 
-__all__ = ["human_repr", "human_result", "indent_multiline"]
+__all__ = ["repr_arg_value", "format_function_style",
+           "human_repr", "human_result",
+           "indent_multiline"]
+
+
+def repr_arg_value(val: Any) -> str:
+    """Return the value's string representation.
+
+    The representation can be used by `libwampli.parse_arg_value` to retrieve
+    the value.
+    """
+    try:
+        return json.dumps(val)
+    except ValueError:
+        return yaml.safe_dump(val)
+
+
+def format_function_style(args: Iterable[Any], kwargs: Mapping[str, Any]) -> str:
+    """Create a function-style representation.
+
+    The representation can be used by `libwampli.parse_args` to get the
+    individual components back.
+    """
+    arg_iter = iter(args)
+    try:
+        uri = str(next(arg_iter))
+    except StopIteration:
+        raise ValueError("No uri in args") from None
+
+    args_str = ", ".join(map(repr_arg_value, arg_iter))
+
+    kwargs_str = ", ".join(f"{key}={repr_arg_value(value)}" for key, value in kwargs.items())
+    if kwargs_str:
+        args_str += f", {kwargs_str}"
+
+    return f"{uri}({args_str})"
 
 
 def human_repr(o: Any) -> str:
