@@ -7,12 +7,11 @@ verify_ssl = true
 pytest = "*"
 
 [packages]
-autobahn = "*"
 konfi = "*"
-cbor = "*"
 yarl = "*"
 pyyaml = "*"
 aiobservable = "*"
+aiowamp = "*"
 
 [requires]
 python_version = "3.7"
@@ -20,3 +19,4 @@ python_version = "3.7"
 [scripts]
 wampli = "python -m wampli"
 tests = "python -m pytest"
+build = "python setup.py sdist bdist_wheel""

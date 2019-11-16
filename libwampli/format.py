@@ -5,12 +5,14 @@ import json
 from typing import Any, Iterable, Mapping
 
 import yaml
+from aiowamp.args_mixin import ArgsMixin
 
 from .args import split_kwarg
 
 __all__ = ["repr_arg_value", "format_function_style",
            "human_repr", "human_result",
-           "indent_multiline"]
+           "indent_multiline",
+           "format_args", "format_kwargs", "format_args_mixin"]
 
 
 def repr_arg_value(val: Any) -> str:
@@ -77,6 +79,9 @@ def human_repr(o: Any) -> str:
     if dataclasses.is_dataclass(o):
         return str(o)
 
+    if isinstance(o, ArgsMixin):
+        return format_args_mixin(o)
+
     try:
         s = yaml.dump(o)
     except yaml.YAMLError:
@@ -120,3 +125,29 @@ def indent_multiline(s: str, indentation: str = "  ", add_newlines: bool = True)
         return f"\n{lines_str}\n"
     else:
         return lines_str
+
+
+def format_args(args: Iterable[Any]) -> str:
+    """Format the arguments into a human readable format.
+
+    Uses `human_repr`.
+    """
+    return ", ".join(indent_multiline(human_repr(arg)) for arg in args)
+
+
+def format_kwargs(kwargs: Mapping[str, Any]) -> str:
+    """Format the keyword arguments into a human readable format.
+
+    Uses `human_repr`.
+    """
+    return "\n".join(f"  {key} = {indent_multiline(human_repr(value))}"
+                     for key, value in kwargs.items())
+
+
+def format_args_mixin(result: ArgsMixin) -> str:
+    args = format_args(result.args)
+    kwargs = format_kwargs(result.kwargs)
+    if args and kwargs:
+        return f"Args: {args}\n\nKwargs:\n{kwargs}"
+
+    return args or kwargs

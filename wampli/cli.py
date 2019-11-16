@@ -6,7 +6,7 @@ import signal
 import sys
 from typing import Any, Awaitable, Callable
 
-from autobahn import wamp
+import aiowamp
 
 import libwampli
 import wampli
@@ -72,11 +72,10 @@ def get_connection_config(args: argparse.Namespace) -> libwampli.ConnectionConfi
     Returns:
         Connection configuration for `libwampli`
     """
-    transports = libwampli.get_transports(args.url)
-    return libwampli.ConnectionConfig(realm=args.realm, transports=transports)
+    return libwampli.ConnectionConfig(realm=args.realm, transports=args.url)
 
 
-def get_session_context(args: argparse.Namespace) -> libwampli.SessionContext:
+def get_client_context(args: argparse.Namespace) -> libwampli.ClientContextManager:
     """Create a session context from the cli args.
 
     Args:
@@ -86,7 +85,7 @@ def get_session_context(args: argparse.Namespace) -> libwampli.SessionContext:
         Context manager for `libwampli.Connection` configured
         to the router denoted by the arguments.
     """
-    return libwampli.SessionContext(get_connection_config(args))
+    return libwampli.ClientContextManager(get_connection_config(args))
 
 
 def _run_async(loop: asyncio.AbstractEventLoop, coro: Awaitable) -> Any:
@@ -137,8 +136,8 @@ def _run_cmd(cmd: Callable[[], Any]) -> None:
     """
     try:
         result = _run_async_cmd(cmd)
-    except wamp.ApplicationError as e:
-        sys.exit(e.error_message())
+    except aiowamp.ErrorResponse as e:
+        sys.exit(str(e))
     else:
         print(libwampli.human_result(result))
 
@@ -146,9 +145,9 @@ def _run_cmd(cmd: Callable[[], Any]) -> None:
 def _call_cmd(args: argparse.Namespace) -> None:
     """Call command."""
 
-    async def cmd() -> None:
-        async with get_session_context(args) as session:
-            return await session.call(args.uri, *call_args, **call_kwargs)
+    async def cmd() -> Any:
+        async with get_client_context(args) as client:
+            return await client.call(args.uri, *call_args, kwargs=call_kwargs)
 
     call_args, call_kwargs = libwampli.parse_args(args.args)
     _run_cmd(cmd)
@@ -158,7 +157,7 @@ def _publish_cmd(args: argparse.Namespace) -> None:
     """Publish command."""
 
     async def cmd() -> None:
-        async with get_session_context(args) as session:
+        async with get_client_context(args) as session:
             # TODO provide options for acknowledge and so on
             ack = session.publish(args.uri, *publish_args, **publish_kwargs)
             if ack is not None:
@@ -173,20 +172,16 @@ def _publish_cmd(args: argparse.Namespace) -> None:
 def _subscribe_cmd(args: argparse.Namespace) -> None:
     """Subscribe command."""
 
-    async def on_event(event: libwampli.SubscriptionEvent) -> None:
-        print(event)
+    def on_event(event: aiowamp.SubscriptionEventABC) -> None:
+        print(libwampli.format_args_mixin(event))
 
     async def cmd() -> None:
-        session_context = get_session_context(args)
-
-        session_context.on(libwampli.SubscriptionEvent, on_event)
-
-        async with session_context:
-            coro_gen = (session_context.add_subscription(uri) for uri in args.uri)
+        async with get_client_context(args) as client:
+            coro_gen = (client.subscribe(uri, on_event) for uri in args.uri)
             await asyncio.gather(*coro_gen)
             print(f"subscribed to {len(args.uri)} topic(s)")
 
-            await session_context.wait_done()
+            await asyncio.get_running_loop().create_future()
 
     _run_cmd(cmd)
 

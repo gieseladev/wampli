@@ -10,10 +10,9 @@ import dataclasses
 import queue
 import textwrap
 import threading
-from typing import Any, Iterable, Mapping, NoReturn, Optional
+from typing import Any, Dict, Iterable, Mapping, NoReturn, Optional
 
-import txaio
-from autobahn.wamp import ApplicationError
+import aiowamp
 
 import libwampli
 
@@ -37,7 +36,7 @@ class Task:
     """
     action: str
     args: Iterable[Any] = dataclasses.field(default_factory=list)
-    kwargs: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
@@ -63,27 +62,26 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
     """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    txaio.config.loop = loop
 
-    connection = libwampli.Connection(config)
+    client: Optional[aiowamp.ClientABC] = None
+    client_task = loop.create_task(aiowamp.connect(config.endpoint, realm=config.realm))
 
-    async def on_subscription_event(event: libwampli.SubscriptionEvent) -> None:
-        print(f"received event: {event}")
-
-    connection.on(libwampli.SubscriptionEvent, on_subscription_event)
+    async def on_subscription_event(event: aiowamp.SubscriptionEventABC) -> None:
+        print(f"received event:\n{libwampli.format_args_mixin(event)}")
 
     async def handle_task(task: Task) -> None:
-        session = await connection.session
+        nonlocal client
+        assert client
 
         if task.action == "call":
             try:
-                result = await session.call(*task.args, **task.kwargs)
-            except ApplicationError as e:
-                print(e.error_message())
+                result = await client.call(*task.args, kwargs=task.kwargs)
+            except aiowamp.ErrorResponse as e:
+                print(e)
             else:
                 print(libwampli.human_result(result))
         elif task.action == "publish":
-            ack = session.publish(*task.args, **task.kwargs)
+            ack = client.publish(*task.args, kwargs=task.kwargs)
             if ack is not None:
                 await ack
 
@@ -94,26 +92,22 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
             except StopIteration:
                 print("no topic provided")
             else:
-                if connection.has_planned_subscription(topic):
-                    print(f"already subscribed to {topic}")
-                else:
-                    await connection.add_subscription(topic)
+                await client.subscribe(topic, on_subscription_event)
         elif task.action == "unsubscribe":
             try:
                 topic = next(iter(task.args))
             except StopIteration:
                 print("no topic provided")
             else:
-                if not connection.has_planned_subscription(topic):
-                    print(f"not subscribed to {topic}")
-                else:
-                    await connection.remove_subscription(topic)
+                await client.unsubscribe(topic)
         else:
             print(f"unknown task given to worker: {task}")
 
     async def runner() -> NoReturn:
+        nonlocal client
+
         print("connecting...")
-        await connection.open()
+        client = await client_task
         print("connected")
 
         async def _handle_task(_task: Task) -> None:
@@ -132,7 +126,7 @@ def worker(config: libwampli.ConnectionConfig, receive: queue.Queue) -> None:
                 loop.create_task(_handle_task(task))
 
         print("waiting for connection to close!")
-        await connection.close()
+        await client.close()
 
         this_task = asyncio.current_task()
         tasks = asyncio.all_tasks(loop)

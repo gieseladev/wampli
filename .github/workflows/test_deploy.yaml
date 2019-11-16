@@ -1,0 +1,58 @@
+name: Test and deploy
+on:
+  push:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    name: Test with Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.7"
+          - "3.8"
+          - "3.x"
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pipenv
+          pipenv install --dev --deploy
+          pipenv run pip install --upgrade importlib_metadata
+
+      - name: Run tests
+        run: pipenv run tests
+
+  deploy:
+    # only deploy on release
+    if: github.event_name == 'release'
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+
+      - name: Install dependencies
+        run: |
+          pip install -U pipenv
+          pipenv install --dev --deploy
+
+      - name: Build distribution
+        run: pipenv run build
+
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: ${{ secrets.PYPI_USERNAME }}
+          password: ${{ secrets.PYPI_PASSWORD }}

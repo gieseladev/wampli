@@ -5,9 +5,9 @@ results.
 """
 
 from .args import *
-from .connection import *
+from .config import *
+from .context import *
 from .format import *
-from .session import *
 
 __author__ = "Giesela Inc."
-__version__ = "0.1.8"
+__version__ = "0.2.0"
