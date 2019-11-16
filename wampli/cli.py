@@ -181,6 +181,7 @@ def _subscribe_cmd(args: argparse.Namespace) -> None:
             await asyncio.gather(*coro_gen)
             print(f"subscribed to {len(args.uri)} topic(s)")
 
+            # TODO wait for client to close!
             await asyncio.get_running_loop().create_future()
 
     _run_cmd(cmd)
