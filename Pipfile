@@ -19,4 +19,4 @@ python_version = "3.7"
 [scripts]
 wampli = "python -m wampli"
 tests = "python -m pytest"
-build = "python setup.py sdist bdist_wheel""
+build = "python setup.py sdist bdist_wheel"
