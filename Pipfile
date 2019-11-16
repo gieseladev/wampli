@@ -13,9 +13,6 @@ pyyaml = "*"
 aiobservable = "*"
 aiowamp = "*"
 
-[requires]
-python_version = "3.7"
-
 [scripts]
 wampli = "python -m wampli"
 tests = "python -m pytest"
