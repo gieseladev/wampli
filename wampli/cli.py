@@ -158,12 +158,7 @@ def _publish_cmd(args: argparse.Namespace) -> None:
 
     async def cmd() -> None:
         async with get_client_context(args) as session:
-            # TODO provide options for acknowledge and so on
-            ack = session.publish(args.uri, *publish_args, **publish_kwargs)
-            if ack is not None:
-                return await ack
-            else:
-                return None
+            await session.publish(args.uri, *publish_args, **publish_kwargs)
 
     publish_args, publish_kwargs = libwampli.parse_args(args.args)
     _run_cmd(cmd)
@@ -181,8 +176,7 @@ def _subscribe_cmd(args: argparse.Namespace) -> None:
             await asyncio.gather(*coro_gen)
             print(f"subscribed to {len(args.uri)} topic(s)")
 
-            # TODO wait for client to close!
-            await asyncio.get_running_loop().create_future()
+            await client.wait_until_done()
 
     _run_cmd(cmd)
 
