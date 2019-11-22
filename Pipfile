@@ -8,9 +8,7 @@ pytest = "*"
 
 [packages]
 konfi = "*"
-yarl = "*"
 pyyaml = "*"
-aiobservable = "*"
 aiowamp = "*"
 
 [scripts]

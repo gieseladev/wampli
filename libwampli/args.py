@@ -6,10 +6,12 @@ import shlex
 import tokenize
 from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Optional, Pattern, Tuple, Union
 
+import aiowamp
 import yaml
 
 __all__ = ["parse_arg_value", "parse_args",
            "split_function_style", "split_arg_string", "split_kwarg",
+           "parse_uri",
            "ready_uri"]
 
 # match: wamp.session.get(12345, key=value)
@@ -104,6 +106,30 @@ def parse_args(args: Union[Iterable[str], str]) -> Tuple[List[Any], Dict[str, An
     return _args, _kwargs
 
 
+# match '*' surrounded by dots
+WILDCARD_MATCH = re.compile(r"(?<=\.)\*(?=\.)")
+
+
+def parse_uri(uri: str) -> aiowamp.URI:
+    """Parse a uri using glob pattern to a WAMP uri."""
+    if "**" in uri:
+        if not uri.endswith("**"):
+            raise ValueError("'**' can only occur at the end")
+
+        return aiowamp.URI(uri[:-2], match_policy=aiowamp.MATCH_PREFIX)
+
+    policy = None
+    if "*" in uri:
+        policy = aiowamp.MATCH_WILDCARD
+        uri = WILDCARD_MATCH.sub("", uri)
+        if uri.startswith("*."):
+            uri = f".{uri[1:]}"
+        if uri.endswith(".*"):
+            uri = f"{uri[:-1]}."
+
+    return aiowamp.URI(uri, match_policy=policy)
+
+
 def ready_uri(args: MutableSequence[Any], *, aliases: Mapping[str, str] = None) -> None:
     """Treat the first argument as the uri prepare it.
 
@@ -131,4 +157,4 @@ def ready_uri(args: MutableSequence[Any], *, aliases: Mapping[str, str] = None) 
         except KeyError:
             pass
 
-    args[0] = uri
+    args[0] = parse_uri(uri)

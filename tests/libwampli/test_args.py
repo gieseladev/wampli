@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Tuple
 
+import aiowamp
 import pytest
 
 import libwampli
@@ -40,6 +41,16 @@ def test_split_kwarg(inp: str, expected: Tuple[Optional[str], str]):
 ])
 def test_parse_args(inp: Tuple[str], expected: Tuple[List[Any], Dict[str, Any]]):
     assert libwampli.parse_args(inp) == expected
+
+
+def test_parse_uri():
+    assert libwampli.parse_uri("a.*.b").match_policy == aiowamp.MATCH_WILDCARD
+    assert libwampli.parse_uri("a.**").match_policy == aiowamp.MATCH_PREFIX
+
+    with pytest.raises(ValueError):
+        libwampli.parse_uri("a.**.b")
+
+    assert libwampli.parse_uri("*.b*.*.*") == "..b*..."
 
 
 def test_ready_uri():

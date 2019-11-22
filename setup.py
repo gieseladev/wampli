@@ -32,11 +32,9 @@ setuptools.setup(
 
     python_requires="~=3.7",
     install_requires=[
-        "aiobservable",
         "aiowamp",
         "konfi",
         "pyyaml",
-        "yarl",
     ],
 
     entry_points={
