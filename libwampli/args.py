@@ -4,7 +4,7 @@ import io
 import re
 import shlex
 import tokenize
-from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Optional, Pattern, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, MutableSequence, Optional, Pattern, Tuple, Union, Match
 
 import aiowamp
 import yaml
@@ -130,6 +130,9 @@ def parse_uri(uri: str) -> aiowamp.URI:
     return aiowamp.URI(uri, match_policy=policy)
 
 
+URI_ALIAS_MATCH = re.compile(r"\$(\w+)(?:\$|(?=.)|$)")
+
+
 def ready_uri(args: MutableSequence[Any], *, aliases: Mapping[str, str] = None) -> None:
     """Treat the first argument as the uri prepare it.
 
@@ -156,5 +159,14 @@ def ready_uri(args: MutableSequence[Any], *, aliases: Mapping[str, str] = None) 
             uri = aliases[uri]
         except KeyError:
             pass
+
+        def repl(m: Match) -> str:
+            alias = m[1]
+            try:
+                return aliases[alias]
+            except KeyError:
+                return m.string
+
+        uri = URI_ALIAS_MATCH.sub(repl, uri)
 
     args[0] = parse_uri(uri)

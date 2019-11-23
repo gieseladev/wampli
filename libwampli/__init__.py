@@ -10,4 +10,4 @@ from .context import *
 from .format import *
 
 __author__ = "Giesela Inc."
-__version__ = "0.3.0"
+__version__ = "0.3.1"

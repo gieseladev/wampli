@@ -60,8 +60,17 @@ def test_ready_uri():
         libwampli.ready_uri([5])
 
     a = ["hello", "world"]
-    libwampli.ready_uri(a)
-    assert a == ["hello", "world"]
 
-    libwampli.ready_uri(a, aliases={"hello": "wamp.session.welcome", "world": "nothing"})
-    assert a == ["wamp.session.welcome", "world"]
+    b = a.copy()
+    libwampli.ready_uri(b)
+    assert b == ["hello", "world"]
+
+    b = a.copy()
+    libwampli.ready_uri(b, aliases={"hello": "wamp.session.welcome", "world": "nothing"})
+    assert b == ["wamp.session.welcome", "world"]
+
+    a = ["$a.$a$b$a.$a", "nope"]
+
+    b = a.copy()
+    libwampli.ready_uri(b, aliases={"a": "test"})
+    assert b == ["test.testbtest.test", "nope"]
